@@ -4,13 +4,15 @@
 
 - Move cursor
 - inserting text
+- deleting
+- new line
+- line numbers
+- custom font
 
 ## Features that are still missing
 
 ### important
 
-- deleting
-- line numbers
 - selecting
 - jump word
 - jump to end of the line
@@ -25,4 +27,6 @@
 - multiple cursors
 - text coloring
 - unicode recognition
-
+- duplicate line
+- delete line
+- move line

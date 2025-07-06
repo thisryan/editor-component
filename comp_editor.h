@@ -38,6 +38,7 @@ typedef struct {
     line_buffer_t *lines;
     cursor_t *cursors;
     char** printable_lines;
+    void *font;
 } editor_t;
 
 #ifndef render_type_t
@@ -54,6 +55,8 @@ typedef enum {
 typedef struct {
     int x, y;
     char* text;
+    void* font;
+    int font_size;
 } render_text_t;
 
 #ifndef render_rect_t
@@ -96,7 +99,7 @@ typedef struct {
     int area_width, area_height;
     int font_size;
     int line_margin;
-    int (*text_width)(char* text, int index, int font_size);
+    int (*text_width)(char* text, int index, void* font, int font_size);
     bool line_numbers;
     int line_number_margin;
 } render_options_t;
@@ -110,6 +113,16 @@ editor_t editor_create(init_options_t options);
 #define editor_insert_at_cursor NAME(insert_at_cursor)
 #endif
 void editor_insert_at_cursor(editor_t *editor, int c);
+
+#ifndef editor_delete_at_cursor
+#define editor_delete_at_cursor NAME(delete_at_cursor)
+#endif
+void editor_delete_at_cursor(editor_t *editor);
+
+#ifndef editor_newline_at_cursor
+#define editor_newline_at_cursor NAME(newline_at_cursor)
+#endif
+void editor_newline_at_cursor(editor_t *editor);
 
 #ifndef editor_start_render
 #define editor_start_render NAME(start_render)
@@ -149,6 +162,10 @@ char** edutil_split_lines(char* text) {
 
 void edutil_insert_in_line(line_buffer_t *line, int index, int c) {
     vec_insert(line->text, index, (char)c);
+}
+
+void edutil_remove_in_line(line_buffer_t *line, int index) {
+    vec_remove(line->text, index);
 }
 
 void edutil_move_cursor_right(editor_t *editor, cursor_t *cursor) {
@@ -191,6 +208,23 @@ void edutil_move_cursor_up(editor_t *editor, cursor_t *cursor) {
     if(cursor->x_start >= vec_length(editor->lines[cursor->y_start].text)) {
         cursor->x_start = vec_length(editor->lines[cursor->y_start].text);
     }
+}
+
+void edutil_concat_lines(line_buffer_t *line1, line_buffer_t *line2) {
+    vec_for_each_cpy(char c, line2->text) {
+        vec_add(line1->text, c);
+    }
+}
+
+line_buffer_t edutil_split_line_at(line_buffer_t *line1, int index) {
+    char *text = NULL;
+    size_t length = vec_length(line1->text);
+    for(int j = index;j < length;j++) {
+        vec_add(text, line1->text[index]);
+        vec_remove(line1->text, index);
+    }
+
+    return (line_buffer_t) { text };
 }
 
 void move_cursor_right(editor_t *editor) {
@@ -244,23 +278,89 @@ void editor_insert_at_cursor(editor_t *editor, int c) {
     }
 }
 
+void editor_delete_at_cursor(editor_t *editor) {
+    int *delete_lines = NULL;
+    vec_for_each_ptr(cursor_t *cursor, editor->cursors) {
+        if(cursor->x_start == 0 && cursor->y_start == 0) continue;
+        line_buffer_t *line = &editor->lines[cursor->y_start];
+        line_buffer_t *prev_line = &editor->lines[cursor->y_start-1];
+
+        if(cursor->x_start == 0) {
+            vec_add(delete_lines, cursor->y_start);
+            edutil_move_cursor_left(editor,cursor);
+            edutil_concat_lines(prev_line, line);
+        } else {
+            edutil_remove_in_line(line, cursor->x_start-1);
+            edutil_move_cursor_left(editor,cursor);
+        }
+    }
+
+
+    for(int j = vec_length(delete_lines)-1;j >= 0;j--){
+        vec_remove(editor->lines, delete_lines[j]);
+    }
+}
+
+void editor_newline_at_cursor(editor_t *editor) {
+    cursor_t *cursor = &editor->cursors[0];
+    line_buffer_t newline = edutil_split_line_at(&editor->lines[cursor->y_start], cursor->x_start);
+
+    vec_insert(editor->lines, cursor->y_start+1, newline);
+    edutil_move_cursor_right(editor, cursor);
+}
+
 render_command_t* editor_start_render(editor_t *editor, const render_options_t* options) {
     render_command_t *render_commands = {0};
-    char** printable_lines = NULL;
-    int x = options->area_x;
     int y = options->area_y;
-    vec_enum_each_cpy(index, line_buffer_t line_buffer, editor->lines) {
+    int line_number_width = 0;
+
+    if(options->line_numbers) {
+        int x = options->area_x;
+        for(int i = 0;i < vec_length(editor->lines);i++) {
+            char *line_number = NULL;
+            vec_init_size(line_number, 21);
+            snprintf(line_number, 21, "%d", i+1);
+
+            vec_add(render_commands, ((render_command_t){.type = TEXT, .as.text = {.x = x, .y = y, .text = line_number, .font = editor->font, .font_size = options->font_size}}));
+
+            int width = options->text_width(line_number, strlen(line_number), editor->font, options->font_size);
+
+            if(width > line_number_width) {
+                line_number_width = width;
+            }
+
+            y += options->font_size + options->line_margin;
+            if(y > options->area_height) {
+                break;
+            }
+        }
+    }
+
+    y = options->area_y;
+    for(int index = 0;index < vec_length(editor->lines);index++) {
+        line_buffer_t line_buffer = editor->lines[index];
+
+        int x = options->area_x;
+        if(options->line_numbers) {
+            x += line_number_width + options->line_number_margin;
+        }
+
         char* printable_line = NULL;
-        vec_for_each_cpy(char c, line_buffer.text) {
+        int copy_index = 0;
+        while(copy_index < vec_length(line_buffer.text) && x + options->text_width(printable_line, copy_index, editor->font, options->font_size) < options->area_width) {
+            char c = line_buffer.text[copy_index++];
             vec_add(printable_line, c);
         }
+        if(x + options->text_width(printable_line, copy_index, editor->font, options->font_size) > options->area_width) {
+            vec_pop(printable_line);
+        }
         vec_add(printable_line, '\0');
-        vec_add(printable_lines, printable_line);
 
-        vec_add(render_commands, ((render_command_t){.type = TEXT, .as.text = {.x = x, .y = y, .text = printable_line}}));
+        vec_add(render_commands, ((render_command_t){.type = TEXT, .as.text = {.x = x, .y = y, .text = printable_line, .font = editor->font, .font_size = options->font_size}}));
 
         vec_for_each_ptr(cursor_t *cursor, editor->cursors) {
-            int width = options->text_width(line_buffer.text, cursor->x_start, options->font_size);
+            int width = options->text_width(line_buffer.text, cursor->x_start, editor->font, options->font_size);
+            if(x + width - options->area_x > options->area_width) continue;
             if(cursor->y_start == index) {
                 render_command_t command = {
                     .type = RECT,
@@ -282,8 +382,6 @@ render_command_t* editor_start_render(editor_t *editor, const render_options_t* 
         }
     }
 
-
-
     return render_commands;
 }
 
@@ -295,10 +393,6 @@ void editor_stop_render(editor_t *editor, render_command_t* render_commands) {
     }
     vec_free(render_commands);
 
-    vec_for_each_cpy(char* printable_line, editor->printable_lines) {
-        vec_free(printable_line);
-    }
-    vec_free(editor->printable_lines);
 }
 
 #undef VECTOR_PATH
