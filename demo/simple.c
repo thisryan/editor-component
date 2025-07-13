@@ -2,8 +2,68 @@
 
 #include <stdio.h>
 
+#include <string.h>
+
 #define EDITOR_IMPLEMENTATION
 #include <comp_editor.h>
+
+typedef enum {
+    CUSRTOM_HINT_START = HINT_END,
+
+    CUSTOM_HINT_KEYWORD,
+    CUSTOM_HINT_HEADER,
+    CUSTOM_HINT_LIST,
+    CUSTOM_HINT_EMPHASIZE,
+    CUSTOM_HINT_STAR,
+    CUSTOM_HINT_UNDERLINE,
+    CUSTOM_HINT_INLINE_CODE
+} custom_render_hints_t;
+
+char *load_file_to_string(const char *filename) {
+    FILE *fp = fopen(filename, "rb");
+    if (!fp) {
+        perror("fopen");
+        return NULL;
+    }
+
+    // Seek to end to get file size
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        perror("fseek");
+        fclose(fp);
+        return NULL;
+    }
+
+    long length = ftell(fp);
+    if (length < 0) {
+        perror("ftell");
+        fclose(fp);
+        return NULL;
+    }
+
+    rewind(fp); // Go back to start
+
+    // Allocate buffer (+1 for null terminator)
+    char *buffer = malloc(length + 1);
+    if (!buffer) {
+        perror("malloc");
+        fclose(fp);
+        return NULL;
+    }
+
+    // Read file into buffer
+    size_t read = fread(buffer, 1, length, fp);
+    if (read != (size_t)length) {
+        perror("fread");
+        free(buffer);
+        fclose(fp);
+        return NULL;
+    }
+
+    buffer[length] = '\0'; // Null terminate
+
+    fclose(fp);
+    return buffer;
+}
 
 
 int text_width(char* text, int index, void* font, int font_size) {
@@ -22,20 +82,163 @@ int text_width(char* text, int index, void* font, int font_size) {
     return width;
 }
 
-int main(void) {
+
+bool word_seperator(uint32_t c) {
+    return c == ' ' || c == '\n';
+}
+
+line_coloring_t calculate_color(char *text, int size, line_coloring_t old_color) {
+    char *comp = "int";
+    if(text == NULL || strlen(comp) > size) {
+        return (line_coloring_t){0};
+    }
+    word_coloring_t *word_colorings = NULL;
+
+
+    for(int i = 0;i <= size - strlen(comp);i++) {
+        if(strncmp(comp, text + i, strlen(comp)) == 0) {
+            word_coloring_t word = {.start = i, .end = i + strlen(comp), .rendering_hint = CUSTOM_HINT_KEYWORD};
+            vec_add(word_colorings, word);
+        }
+    }
+
+    return (line_coloring_t) {.word_colorings = word_colorings};
+}
+
+bool is_header(char*text, int size) {
+    int index = 0;
+    while(index < size && text[index] == ' ') {
+        index++;
+    }
+
+    if(index >= size) {
+        return false;
+    }
+
+    if(text[index] == '#') {
+        while(index < size && text[index] == '#') {
+            index++;
+        }
+        if(text[index] == ' ') {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool check_for_list(char *text, int size, int *position) {
+    int index = 0;
+    while(index < size && text[index] == ' ') {
+        index++;
+    }
+
+    if(index >= size) {
+        return false;
+    }
+
+    if(text[index] == '-') {
+        *position = index;
+        return true;
+    }
+
+    return false;
+}
+
+bool check_for_surrounded(char* text, int size, char symbol, int *end_position){
+    int index = 0;
+    // printf("Chelc %c \n", symbol);
+    if(text[index] == symbol) {
+        // printf("start equal %c \n", symbol);
+        index++;
+        if(text[index] != ' ') {
+            // printf("nOT space %c \n", symbol);
+            while(index < size && text[index] != symbol) {
+                index++;
+            }
+            *end_position = index+1;
+            return true;
+        }
+    }
+    return false;
+}
+
+line_coloring_t markdown_coloring(char *text, int size, line_coloring_t old_color) {
+    printf("Line: %.*s\n", size, text);
+    if(is_header(text, size)) {
+        word_coloring_t wc = {.start = 0, .end = size, .rendering_hint = CUSTOM_HINT_HEADER};
+        word_coloring_t *lc = NULL;
+        vec_add(lc, wc);
+        return (line_coloring_t){.word_colorings = lc};
+    }
+
+    word_coloring_t *lc = NULL;
+    int index = 0;
+
+    int list_position;
+    if(check_for_list(text, size, &list_position)) {
+        word_coloring_t wc = {.start = list_position, .end= list_position+1, .rendering_hint = CUSTOM_HINT_LIST};
+        vec_add(lc, wc);
+        text = text + list_position;
+        index = list_position;
+    }
+
+    for(int i = index;i < size;i++) {
+        if(text[i] == '*') {
+            int offset;
+            if(check_for_surrounded(text + i, size - i, '*', &offset)) {
+                word_coloring_t wc = {.start = i, .end = i + offset, .rendering_hint = CUSTOM_HINT_EMPHASIZE};
+                vec_add(lc, wc);
+            }
+        }
+        if(text[i] == '_'){
+            int offset;
+            if(check_for_surrounded(text + i, size - i, '_', &offset)) {
+                printf("Check underline coloring wird erstellt\n");
+                word_coloring_t wc = {.start = i, .end = i + offset, .rendering_hint = CUSTOM_HINT_UNDERLINE};
+                vec_add(lc, wc);
+            }
+        }
+        if(text[i] == '`'){
+            int offset;
+            if(check_for_surrounded(text + i, size - i, '`', &offset)) {
+                word_coloring_t wc = {.start = i, .end = i + offset, .rendering_hint = CUSTOM_HINT_INLINE_CODE};
+                vec_add(lc, wc);
+            }
+        }
+    }
+
+    for(int i = 0;i < vec_length(lc);i++){
+        printf("Coloring: %d:%d:%d \n", lc[i].start, lc[i].end, lc[i].rendering_hint);
+    }
+
+    return (line_coloring_t){lc};
+}
+
+bool mouse_in_rect(int mx, int my, int rx, int ry, int rw, int rh) {
+    return mx >= rx && mx <= rx + rw && my >= ry && my <= ry + rh;
+}
+
+int main(int argc, char **argv) {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(0,0, "Editor component");
+    char *text =  "Das ist ein text\nMit 2 Zeilen";
+    if(argc > 1) {
+        text = load_file_to_string(argv[1]);
+    }
+
     init_options_t options = {
-        .text = "Das ist ein text\nMit 2 Zeilen",
+        .text = text
     };
 
-    Font roboto = LoadFontEx("res/Roboto-Black.ttf", 30, NULL, 0);
+    Font roboto = LoadFontEx("res/FiraCode-Regular.ttf", 30, NULL, 0);
 
-    editor_t editor = create(options);
+    editor_t editor = create(options, markdown_coloring);
     editor.font = &roboto;
+    editor.word_seperator = &word_seperator;
     render_options_t render_options = {
-        .area_height = 500,
         .area_width = 500,
+        .area_height = 500,
         .font_size = 30,
         .line_margin = 5,
         .text_width = &text_width,
@@ -44,9 +247,16 @@ int main(void) {
         .line_number_margin = 10
     };
 
+    Color back = {.r = 24, .g = 24, .b = 24, .a = 255};
+
+    int cursor = MOUSE_CURSOR_DEFAULT;
     while(!WindowShouldClose()) {
         BeginDrawing();
-        ClearBackground(WHITE);
+        ClearBackground(back);
+        int temp_cursor = MOUSE_CURSOR_DEFAULT;
+
+        render_options.area_width = GetScreenWidth();
+        render_options.area_height = GetScreenHeight();
 
         int c;
         while((c = GetCharPressed()) != 0) {
@@ -54,34 +264,137 @@ int main(void) {
         }
 
         if(IsKeyPressed(KEY_RIGHT)) {
-            move_cursor_right(&editor);
+            if(IsKeyDown(KEY_LEFT_CONTROL)){
+                jump_word(&editor, 0);
+            }else {
+                move_cursor_right(&editor);
+            }
         }
 
         if(IsKeyPressed(KEY_LEFT)) {
-            move_cursor_left(&editor);
+            if(IsKeyDown(KEY_LEFT_CONTROL)) {
+                jump_word(&editor, -1);
+            }else{
+                move_cursor_left(&editor);
+            }
         }
 
         if(IsKeyPressed(KEY_DOWN)) {
-            move_cursor_down(&editor);
+            if(IsKeyDown(KEY_LEFT_ALT)) {
+                move_line_at_cursor(&editor, 1);
+            } else {
+                move_cursor_down(&editor);
+            }
         }
 
         if(IsKeyPressed(KEY_UP)) {
-            move_cursor_up(&editor);
+            if(IsKeyDown(KEY_LEFT_ALT)) {
+                move_line_at_cursor(&editor, -1);
+            } else {
+                move_cursor_up(&editor);
+            }
         }
 
         if(IsKeyPressed(KEY_BACKSPACE)) {
-            delete_at_cursor(&editor);
+            if(IsKeyDown(KEY_LEFT_CONTROL)) {
+                delete_word_at_cursor(&editor);
+            }else {
+                delete_at_cursor(&editor);
+            }
         }
 
         if(IsKeyPressed(KEY_ENTER)) {
-            newline_at_cursor(&editor);
+            if(IsKeyDown(KEY_LEFT_CONTROL)) {
+                if(IsKeyDown(KEY_LEFT_SHIFT)) {
+                    newline_at_cursor(&editor, false, 0);
+                } else {
+                    newline_at_cursor(&editor, false, 1);
+                }
+            } else {
+                newline_at_cursor(&editor, true, 1);
+            }
         }
 
-        if(IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_A)) {
+        if(IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_RIGHT_BRACKET)) {
             render_options.font_size *= 1.2;
+            UnloadFont(roboto);
+            render_options.line_margin = render_options.font_size/6;
+            roboto = LoadFontEx("res/FiraCode-Regular.ttf", render_options.font_size, NULL, 0);
         }
-        if(IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_B)) {
+        if(IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_SLASH)) {
             render_options.font_size /= 1.2;
+            UnloadFont(roboto);
+            render_options.line_margin = render_options.font_size/6;
+            roboto = LoadFontEx("res/FiraCode-Regular.ttf", render_options.font_size, NULL, 0);
+        }
+
+        if(IsKeyPressed(KEY_LEFT_SHIFT)) {
+            start_select(&editor);
+        }
+
+        if(IsKeyReleased(KEY_LEFT_SHIFT)) {
+            stop_select(&editor);
+        }
+
+        if(IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_V)) {
+            const char *text = GetClipboardText();
+            insert_block_at_cursor(&editor, text, false, true);
+        }
+
+        if(IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_C)) {
+            const char *text = get_selection(&editor, 0);
+            SetClipboardText(text);
+        }
+
+        if(IsKeyPressed(KEY_END)) {
+            jump_end_of_line(&editor);
+        }
+
+        if(IsKeyPressed(KEY_HOME)) {
+            jump_start_of_line(&editor);
+        }
+
+        if(IsKeyDown(KEY_LEFT_SHIFT) && IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_D)) {
+            dublicate_line_at_cursor(&editor, 1);
+        }
+        if(IsKeyDown(KEY_LEFT_SHIFT) && IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_A)) {
+            dublicate_line_at_cursor(&editor, 0);
+        }
+        if(IsKeyDown(KEY_LEFT_SHIFT) && IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_K)) {
+            delete_line_at_cursor(&editor);
+        }
+
+        if(GetMouseWheelMove() == 1) {
+            editor.scroll_start = editor.scroll_start == 0 ? 0 : editor.scroll_start-1;
+        }
+
+        if(GetMouseWheelMove() == -1) {
+            editor.scroll_start = editor.scroll_start == vec_length(editor.lines)-2 ? vec_length(editor.lines)-2 : editor.scroll_start+1;
+        }
+
+        if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+            int out_x, out_y;
+            mouse_to_cursor(&editor, &render_options, GetMouseX(), GetMouseY(), &out_x, &out_y);
+            if(!(out_x == -1 && out_y == -1)) {
+                jump_cursor_to(&editor, out_x, out_y);
+            }
+        }
+
+        if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            start_select(&editor);
+        }
+
+        if(IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+            stop_select(&editor);
+        }
+
+        if(mouse_in_rect(GetMouseX(), GetMouseY(), render_options.area_x, render_options.area_y,render_options.area_width,render_options.area_height)) {
+            temp_cursor = MOUSE_CURSOR_IBEAM;
+        }
+
+        if(temp_cursor != cursor) {
+            cursor = temp_cursor;
+            SetMouseCursor(cursor);
         }
 
         render_command_t *render_commands = start_render(&editor, &render_options);
@@ -91,12 +404,41 @@ int main(void) {
                 const render_text_t *text_command = &command->as.text;
                 Font font = *(Font*)text_command->font;
                 Vector2 pos = { text_command->x, text_command->y};
-                DrawTextEx(font, text_command->text,pos, text_command->font_size, 2, BLACK);
+                Color c = WHITE;
+                if(command->render_hint == HINT_LINE_NUMBER) {
+                    c = GRAY;
+                }
+                if(command->render_hint == CUSTOM_HINT_KEYWORD) {
+                    c = RED;
+                }
+                if(command->render_hint == CUSTOM_HINT_HEADER) {
+                    c = GREEN;
+                }
+                if(command->render_hint == CUSTOM_HINT_LIST) {
+                    c = ORANGE;
+                }
+                if(command->render_hint == CUSTOM_HINT_EMPHASIZE) {
+                    c = RED;
+                }
+                if(command->render_hint == CUSTOM_HINT_UNDERLINE) {
+                    c = BLUE;
+                }
+                if(command->render_hint == CUSTOM_HINT_INLINE_CODE) {
+                    c = BEIGE;
+                }
+                DrawTextEx(font, text_command->text,pos, text_command->font_size, 2, c);
             }
 
             if(command->type == RECT) {
                 const render_rect_t *rect_command = &command->as.rect;
-                Color c = {.r = rect_command->color[0], .g = rect_command->color[1], .b = rect_command->color[2], .a = rect_command->color[3]};
+                // Color c = {.r = rect_command->color[0], .g = rect_command->color[1], .b = rect_command->color[2], .a = rect_command->color[3]};
+                Color c = {.r = 13, .g = 224, .b = 206, .a = 45};
+                if(command->render_hint == HINT_CURSOR) {
+                    c.a = 255;
+                }
+                if(command->render_hint == HINT_HIGHLIGHT_LINE) {
+                    c = (Color){.r = 255, .g = 255, .b = 255, .a = 25};
+                }
                 DrawRectangle(rect_command->x, rect_command->y, rect_command->width, rect_command->height, c);
             }
         }
@@ -105,6 +447,9 @@ int main(void) {
 
         EndDrawing();
     }
+
+    editor_cleanup(&editor);
+    UnloadFont(roboto);
 
     CloseWindow();
 }

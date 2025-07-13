@@ -8,25 +8,39 @@
 - new line
 - line numbers
 - custom font
+- selecting
+- insert block of text
+- jump to end of the line
+- jump tp start of the line
+- duplicate line
+- newline above
+- newline below
+- move line
+- delete line
+- dublicate line
+- jump word
+- scrolling
+- getting cursor position from screen position
+- highlight current line
+- delete word
 
 ## Features that are still missing
 
-### important
+### Now
 
-- selecting
-- jump word
-- jump to end of the line
+- text coloring
 
 ### later
 
-- searching?
-- getting cursor position from screen position
-- fraction based scrolling
-- undo
-- line wrapping
+- delete right and left
+- select word
+- some utilities for tabs vs spaces
+
 - multiple cursors
-- text coloring
+- searching?
+- undo
+
 - unicode recognition
-- duplicate line
-- delete line
-- move line
+- validator for input(only number input)
+- placeholder
+- line wrapping
