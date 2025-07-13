@@ -138,8 +138,10 @@ bool check_for_list(char *text, int size, int *position) {
     }
 
     if(text[index] == '-') {
-        *position = index;
-        return true;
+        if(index < size-1 && text[index+1] == ' ') {
+            *position = index;
+            return true;
+        }
     }
 
     return false;
@@ -164,7 +166,6 @@ bool check_for_surrounded(char* text, int size, char symbol, int *end_position){
 }
 
 line_coloring_t markdown_coloring(char *text, int size, line_coloring_t old_color) {
-    printf("Line: %.*s\n", size, text);
     if(is_header(text, size)) {
         word_coloring_t wc = {.start = 0, .end = size, .rendering_hint = CUSTOM_HINT_HEADER};
         word_coloring_t *lc = NULL;
@@ -189,14 +190,15 @@ line_coloring_t markdown_coloring(char *text, int size, line_coloring_t old_colo
             if(check_for_surrounded(text + i, size - i, '*', &offset)) {
                 word_coloring_t wc = {.start = i, .end = i + offset, .rendering_hint = CUSTOM_HINT_EMPHASIZE};
                 vec_add(lc, wc);
+                i+=offset;
             }
         }
         if(text[i] == '_'){
             int offset;
             if(check_for_surrounded(text + i, size - i, '_', &offset)) {
-                printf("Check underline coloring wird erstellt\n");
                 word_coloring_t wc = {.start = i, .end = i + offset, .rendering_hint = CUSTOM_HINT_UNDERLINE};
                 vec_add(lc, wc);
+                i+=offset;
             }
         }
         if(text[i] == '`'){
@@ -204,12 +206,9 @@ line_coloring_t markdown_coloring(char *text, int size, line_coloring_t old_colo
             if(check_for_surrounded(text + i, size - i, '`', &offset)) {
                 word_coloring_t wc = {.start = i, .end = i + offset, .rendering_hint = CUSTOM_HINT_INLINE_CODE};
                 vec_add(lc, wc);
+                i+=offset;
             }
         }
-    }
-
-    for(int i = 0;i < vec_length(lc);i++){
-        printf("Coloring: %d:%d:%d \n", lc[i].start, lc[i].end, lc[i].rendering_hint);
     }
 
     return (line_coloring_t){lc};
@@ -251,6 +250,9 @@ int main(int argc, char **argv) {
 
     int cursor = MOUSE_CURSOR_DEFAULT;
     while(!WindowShouldClose()) {
+        double delta = GetFrameTime();
+        update_timers(&editor, delta);
+
         BeginDrawing();
         ClearBackground(back);
         int temp_cursor = MOUSE_CURSOR_DEFAULT;
@@ -297,9 +299,17 @@ int main(int argc, char **argv) {
 
         if(IsKeyPressed(KEY_BACKSPACE)) {
             if(IsKeyDown(KEY_LEFT_CONTROL)) {
-                delete_word_at_cursor(&editor);
+                delete_word_at_cursor(&editor,-1);
             }else {
-                delete_at_cursor(&editor);
+                delete_at_cursor(&editor, -1);
+            }
+        }
+
+        if(IsKeyPressed(KEY_DELETE)) {
+            if(IsKeyDown(KEY_LEFT_CONTROL)) {
+                delete_word_at_cursor(&editor,0);
+            }else {
+                delete_at_cursor(&editor, 0);
             }
         }
 
@@ -386,6 +396,10 @@ int main(int argc, char **argv) {
 
         if(IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
             stop_select(&editor);
+        }
+
+        if(IsKeyPressed(KEY_Y) && IsKeyDown(KEY_LEFT_CONTROL)) {
+            rollback(&editor);
         }
 
         if(mouse_in_rect(GetMouseX(), GetMouseY(), render_options.area_x, render_options.area_y,render_options.area_width,render_options.area_height)) {

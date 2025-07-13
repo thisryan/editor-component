@@ -48,6 +48,42 @@ typedef struct {
     bool running;
     bool effect;
 } editor_timer_t;
+
+typedef enum {
+    ACTION_INSERT,
+    ACTION_MOVE,
+    ACTION_REMOVE,
+    ACTION_COMPOUND
+} editor_action_type_t;
+
+typedef struct {
+    int x_start, y_start;
+    int x_end, y_end;
+} action_insert_t;
+
+typedef struct {
+    int line;
+} action_newline_t;
+
+typedef struct editor_action_t editor_action_t;
+
+typedef struct {
+    editor_action_type_t compound_type;
+    editor_action_t *actions;
+} action_compound_t;
+
+typedef union {
+    action_insert_t insert;
+    action_compound_t compound;
+} action_data_t;
+
+struct editor_action_t {
+    editor_action_type_t type;
+    action_data_t as;
+    cursor_t before;
+    cursor_t after;
+};
+
 #ifndef editor_t
 #define editor_t TYPENAME
 #endif
@@ -61,6 +97,8 @@ typedef struct {
     int last_size;
     int scroll_start;
     line_coloring_t (*calculate_color)(char *, int, line_coloring_t);
+    editor_action_t *actions;
+    editor_timer_t action_timer;
 } editor_t;
 
 #ifndef render_type_t
@@ -153,12 +191,12 @@ void editor_insert_at_cursor(editor_t *editor, int c);
 #ifndef editor_delete_at_cursor
 #define editor_delete_at_cursor NAME(delete_at_cursor)
 #endif
-void editor_delete_at_cursor(editor_t *editor);
+void editor_delete_at_cursor(editor_t *editor, int direction);
 
 #ifndef editor_delete_word_at_cursor
 #define editor_delete_word_at_cursor NAME(delete_word_at_cursor)
 #endif
-void editor_delete_word_at_cursor(editor_t *editor);
+void editor_delete_word_at_cursor(editor_t *editor, int direction);
 
 #ifndef editor_newline_at_cursor
 #define editor_newline_at_cursor NAME(newline_at_cursor)
@@ -225,6 +263,16 @@ void editor_jump_word(editor_t *editor, int direction);
 #endif
 void editor_mouse_to_cursor(editor_t *editor, render_options_t *options, float x, float y, int *out_x, int* out_y);
 
+#ifndef editor_rollback
+#define editor_rollback NAME(rollback)
+#endif
+void editor_rollback(editor_t *editor);
+
+#ifndef editor_update_timers
+#define editor_update_timers NAME(update_timers)
+#endif
+void editor_update_timers(editor_t *editor, double delta);
+
 #ifdef EDITOR_IMPLEMENTATION
 
 #ifndef VECTOR_PATH
@@ -265,6 +313,42 @@ void edutil_timer_stop(editor_timer_t *timer) {
     timer->effect = false;
     timer->current = 0;
 }
+
+void edutil_add_action(editor_t *editor, editor_action_t action) {
+    bool inserted = false;;
+    if(editor->action_timer.running) {
+        editor_action_t last_action = vec_peek(editor->actions);
+        if(last_action.type == action.type) {
+            editor_action_t *actions = NULL;
+            vec_add(actions, last_action);
+            vec_add(actions, action);
+            editor_action_t compound = {
+                .type = ACTION_COMPOUND,
+                .as.compound = {
+                    .compound_type = action.type,
+                    .actions = actions
+                }
+            };
+            vec_pop(editor->actions);
+            vec_add(editor->actions, compound);
+            inserted = true;
+        }
+        if(last_action.type == ACTION_COMPOUND) {
+            action_compound_t *compound = &last_action.as.compound;
+            if(compound->compound_type == action.type) {
+                vec_add(compound->actions, action);
+                inserted = true;
+            }
+        }
+    }
+
+    if(!inserted) {
+        vec_add(editor->actions, action);
+    }
+
+    edutil_timer_start(&editor->action_timer, 0.5);
+}
+
 char** edutil_split_lines(const char* text) {
     if(text == NULL) return NULL;
 
@@ -519,12 +603,23 @@ void editor_insert_at_cursor(editor_t *editor, int c) {
         if(edutil_cursor_has_selection(cursor)) {
             edutil_remove_selection(editor, cursor);
         }
-
+        cursor_t before = *cursor;
         line_buffer_t *line = &editor->lines[cursor->y_start];
         edutil_insert_in_line(line, cursor->x_start, c);
         line_coloring_t coloring = editor->calculate_color(line->text, vec_length(line->text), line->coloring);
         line->coloring = coloring;
         edutil_move_cursor_right(editor, cursor, false);
+        cursor_t after = *cursor;
+        editor_action_t action = {
+            .type = ACTION_INSERT,
+            .as.insert = {.x_start = before.x_start, .y_start = before.y_start, .y_end = after.y_start, .x_end = after.x_start},
+            .before = before,
+            .after = after
+        };
+        edutil_add_action(editor, action);
+    }
+}
+
 void delete_cursor_left(editor_t *editor, cursor_t *cursor, int** delete_lines) {
     line_buffer_t *line = &editor->lines[cursor->y_start];
     line_buffer_t *prev_line = &editor->lines[cursor->y_start-1];
@@ -576,10 +671,6 @@ void editor_delete_at_cursor(editor_t *editor, int direction) {
             delete_cursor_left(editor, cursor, &delete_lines);
         } else if(direction == 0) {
             delete_cursor_right(editor, cursor, &delete_lines);
-            edutil_remove_in_line(line, cursor->x_start-1);
-            edutil_move_cursor_left(editor,cursor, false);
-            line_coloring_t coloring = editor->calculate_color(line->text, vec_length(line->text), line->coloring);
-            line->coloring = coloring;
         }
 
     }
@@ -1115,7 +1206,53 @@ void editor_mouse_to_cursor(editor_t *editor, render_options_t *options, float x
     *out_x = final_x;
 }
 
+void rollback_insert(editor_t *editor, action_insert_t action);
+cursor_t rollback_compound(editor_t *editor, action_compound_t action);
 
+cursor_t rollback_action(editor_t *editor, editor_action_t action) {
+    cursor_t cursor = action.before;
+    switch(action.type){
+        case ACTION_INSERT: {
+            rollback_insert(editor, action.as.insert);
+            break;
+        }
+        case ACTION_COMPOUND: {
+            cursor = rollback_compound(editor, action.as.compound);
+        }
+        default: {
+            break;
+        }
+    }
+
+    return cursor;
+}
+
+void rollback_insert(editor_t *editor, action_insert_t action){
+    cursor_t cursor = {.x_start = action.x_start, .y_start = action.y_start, .x_end = action.x_end, .y_end = action.y_end};
+    edutil_remove_selection(editor, &cursor);
+}
+
+cursor_t rollback_compound(editor_t *editor, action_compound_t action) {
+    for(int i = vec_length(action.actions)-1;i >= 0;i--){
+        rollback_action(editor, action.actions[i]);
+    }
+
+    return action.actions[0].before;
+}
+
+void editor_rollback(editor_t *editor) {
+    if(vec_empty(editor->actions)) {
+        return;
+    }
+
+    editor_action_t action = vec_pop(editor->actions);
+
+    editor->cursors[0] = rollback_action(editor, action);
+}
+
+void editor_update_timers(editor_t *editor, double delta) {
+    edutil_advance_timer(&editor->action_timer, delta);
+}
 
 #undef VECTOR_PATH
 
