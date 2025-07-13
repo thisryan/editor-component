@@ -287,6 +287,11 @@ char** edutil_split_lines(const char* text) {
     return lines;
 }
 
+void edutil_update_coloring(editor_t* editor, line_buffer_t *line) {
+    line_coloring_t color = editor->calculate_color(line->text, vec_length(line->text), (line_coloring_t){0});
+    line->coloring = color;
+}
+
 void edutil_insert_in_line(line_buffer_t *line, int index, int c) {
     vec_insert(line->text, index, (char)c);
 }
@@ -371,10 +376,11 @@ void edutil_move_cursor_up(editor_t *editor, cursor_t *cursor, bool selecting) {
     check_editor_view(editor, cursor);
 }
 
-void edutil_concat_lines(line_buffer_t *line1, line_buffer_t *line2) {
+void edutil_concat_lines(editor_t *editor, line_buffer_t *line1, line_buffer_t *line2) {
     vec_for_each_cpy(char c, line2->text) {
         vec_add(line1->text, c);
     }
+    edutil_update_coloring(editor, line1);
 }
 
 void edutil_insert_line_in_line(line_buffer_t *line1, line_buffer_t *line2, int index) {
@@ -387,7 +393,7 @@ bool edutil_cursor_has_selection(cursor_t *cursor) {
     return cursor->x_start != cursor->x_end || cursor->y_start != cursor->y_end;
 }
 
-line_buffer_t edutil_split_line_at(line_buffer_t *line1, int index) {
+line_buffer_t edutil_split_line_at(editor_t *editor, line_buffer_t *line1, int index) {
     char *text = NULL;
     size_t length = vec_length(line1->text);
     for(int j = index;j < length;j++) {
@@ -395,7 +401,11 @@ line_buffer_t edutil_split_line_at(line_buffer_t *line1, int index) {
         vec_remove(line1->text, index);
     }
 
-   return (line_buffer_t) { text };
+    line_buffer_t newline =  { text };
+    edutil_update_coloring(editor, line1);
+    edutil_update_coloring(editor, &newline);
+
+   return newline;
 }
 
 void edutil_remove_selection(editor_t *editor, cursor_t *cursor) {
@@ -419,10 +429,10 @@ void edutil_remove_selection(editor_t *editor, cursor_t *cursor) {
             vec_remove(editor->lines[y_start].text, x_start);
         }
     } else {
-        line_buffer_t removed = edutil_split_line_at(&editor->lines[y_start], x_start);
+        line_buffer_t removed = edutil_split_line_at(editor, &editor->lines[y_start], x_start);
         vec_free(removed.text);
-        line_buffer_t rest = edutil_split_line_at(&editor->lines[y_end], x_end);
-        edutil_concat_lines(&editor->lines[y_start], &rest);
+        line_buffer_t rest = edutil_split_line_at(editor, &editor->lines[y_end], x_end);
+        edutil_concat_lines(editor, &editor->lines[y_start], &rest);
 
         for(int i = y_start+1;i <= y_end;i++){
             vec_free(editor->lines[y_start+1].text);
@@ -560,8 +570,9 @@ void editor_newline_at_cursor(editor_t *editor, bool splitline, int direction) {
 
     line_buffer_t newline = {NULL};
     if(splitline) {
-        newline = edutil_split_line_at(&editor->lines[cursor->y_start], cursor->x_start);
+        newline = edutil_split_line_at(editor, &editor->lines[cursor->y_start], cursor->x_start);
     }
+    edutil_update_coloring(editor, &newline);
 
     vec_insert(editor->lines, cursor->y_start+direction, newline);
     if(splitline) {
@@ -572,6 +583,7 @@ void editor_newline_at_cursor(editor_t *editor, bool splitline, int direction) {
         edutil_move_cursor_down(editor, cursor, false);
         edutil_move_cursor_up(editor, cursor, false);
     }
+
 }
 
 void editor_insert_block_at_cursor(editor_t *editor, const char* text, bool ignore_newlines, bool select) {
@@ -590,26 +602,28 @@ void editor_insert_block_at_cursor(editor_t *editor, const char* text, bool igno
         line_buffer_t new_line = (line_buffer_t){text_copy};
 
         edutil_insert_line_in_line(line_buffer, &new_line, cursor->x_start);
+        edutil_update_coloring(editor, line_buffer);
         cursor->x_start += vec_length(text_copy);
     } else {
         char **lines = edutil_split_lines(text);
-        line_buffer_t rest = edutil_split_line_at(&editor->lines[cursor->y_start], cursor->x_start);
+        line_buffer_t rest = edutil_split_line_at(editor, &editor->lines[cursor->y_start], cursor->x_start);
         line_buffer_t first = {lines[0]};
-        edutil_concat_lines(&editor->lines[cursor->y_start], &first);
+        edutil_concat_lines(editor, &editor->lines[cursor->y_start], &first);
 
         if(vec_length(lines) == 1) {
-            edutil_concat_lines(&editor->lines[cursor->y_start], &rest);
+            edutil_concat_lines(editor, &editor->lines[cursor->y_start], &rest);
             cursor->x_start += vec_length(first.text);
         } else {
             for(int i = 1;i < vec_length(lines)-1;i++) {
                 line_buffer_t line = {lines[i]};
+                edutil_update_coloring(editor, &line);
                 cursor->y_start++;
                 vec_insert(editor->lines, cursor->y_start, line);
             }
 
             line_buffer_t line = {lines[vec_length(lines)-1]};
             cursor->x_start = vec_length(line.text);
-            edutil_concat_lines(&line, &rest);
+            edutil_concat_lines(editor, &line, &rest);
             cursor->y_start++;
             vec_insert(editor->lines, cursor->y_start, line);
         }
