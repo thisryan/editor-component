@@ -42,6 +42,12 @@ typedef struct {
     line_coloring_t coloring;
 } line_buffer_t;
 
+typedef struct {
+    double length;
+    double current;
+    bool running;
+    bool effect;
+} editor_timer_t;
 #ifndef editor_t
 #define editor_t TYPENAME
 #endif
@@ -228,6 +234,37 @@ void editor_mouse_to_cursor(editor_t *editor, render_options_t *options, float x
 
 #include <string.h>
 
+void edutil_advance_timer(editor_timer_t *timer, double delta) {
+    if(!timer->running) return;
+
+    timer->current += delta;
+    if(timer->current > timer->length) {
+        timer->running = false;
+        timer->effect = true;
+    }
+}
+
+bool edutil_timer_poll(editor_timer_t *timer) {
+    if(timer->effect) {
+        timer->effect = false;
+        return true;
+    }
+
+    return false;
+}
+
+void edutil_timer_start(editor_timer_t *timer, double length) {
+    timer->running = true;
+    timer->effect = false;
+    timer->length = length;
+    timer->current = 0;
+}
+
+void edutil_timer_stop(editor_timer_t *timer) {
+    timer->running = false;
+    timer->effect = false;
+    timer->current = 0;
+}
 char** edutil_split_lines(const char* text) {
     if(text == NULL) return NULL;
 
