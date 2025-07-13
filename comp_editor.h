@@ -525,10 +525,43 @@ void editor_insert_at_cursor(editor_t *editor, int c) {
         line_coloring_t coloring = editor->calculate_color(line->text, vec_length(line->text), line->coloring);
         line->coloring = coloring;
         edutil_move_cursor_right(editor, cursor, false);
+void delete_cursor_left(editor_t *editor, cursor_t *cursor, int** delete_lines) {
+    line_buffer_t *line = &editor->lines[cursor->y_start];
+    line_buffer_t *prev_line = &editor->lines[cursor->y_start-1];
+
+    printf("asdasdasd \n");
+    if(cursor->x_start == 0) {
+        printf("Hello \n");
+        vec_add((*delete_lines), cursor->y_start);
+        edutil_move_cursor_left(editor,cursor, false);
+        edutil_concat_lines(editor, prev_line, line);
+        line_coloring_t coloring = editor->calculate_color(prev_line->text, vec_length(prev_line->text), prev_line->coloring);
+        prev_line->coloring = coloring;
+    } else {
+        edutil_remove_in_line(line, cursor->x_start-1);
+        edutil_move_cursor_left(editor,cursor, false);
+        line_coloring_t coloring = editor->calculate_color(line->text, vec_length(line->text), line->coloring);
+        line->coloring = coloring;
     }
 }
 
-void editor_delete_at_cursor(editor_t *editor) {
+void delete_cursor_right(editor_t *editor, cursor_t *cursor, int** delete_lines) {
+    line_buffer_t *line = &editor->lines[cursor->y_start];
+    line_buffer_t *next_line = &editor->lines[cursor->y_start+1];
+
+    if(cursor->x_start == vec_length(line->text)) {
+        vec_add((*delete_lines), cursor->y_start+1);
+        edutil_concat_lines(editor, line, next_line);
+        line_coloring_t coloring = editor->calculate_color(line->text, vec_length(line->text), line->coloring);
+        line->coloring = coloring;
+    } else {
+        edutil_remove_in_line(line, cursor->x_start);
+        line_coloring_t coloring = editor->calculate_color(line->text, vec_length(line->text), line->coloring);
+        line->coloring = coloring;
+    }
+}
+
+void editor_delete_at_cursor(editor_t *editor, int direction) {
     int *delete_lines = NULL;
     vec_for_each_ptr(cursor_t *cursor, editor->cursors) {
         if(edutil_cursor_has_selection(cursor)) {
@@ -536,19 +569,13 @@ void editor_delete_at_cursor(editor_t *editor) {
             continue;
         }
 
-        if(cursor->x_start == 0 && cursor->y_start == 0) continue;
+        if(direction == -1 && cursor->x_start == 0 && cursor->y_start == 0) continue;
+        if(direction == 0 && cursor->y_start == vec_length(editor->lines) && cursor->x_start == vec_length(editor->lines[cursor->y_start].text)) continue;
 
-        line_buffer_t *line = &editor->lines[cursor->y_start];
-        line_buffer_t *prev_line = &editor->lines[cursor->y_start-1];
-
-        if(cursor->x_start == 0) {
-            vec_add(delete_lines, cursor->y_start);
-            edutil_move_cursor_left(editor,cursor, false);
-            printf("%d:%d \n", cursor->x_start, cursor->x_end);
-            edutil_concat_lines(prev_line, line);
-            line_coloring_t coloring = editor->calculate_color(prev_line->text, vec_length(prev_line->text), prev_line->coloring);
-            prev_line->coloring = coloring;
-        } else {
+        if(direction == -1) {
+            delete_cursor_left(editor, cursor, &delete_lines);
+        } else if(direction == 0) {
+            delete_cursor_right(editor, cursor, &delete_lines);
             edutil_remove_in_line(line, cursor->x_start-1);
             edutil_move_cursor_left(editor,cursor, false);
             line_coloring_t coloring = editor->calculate_color(line->text, vec_length(line->text), line->coloring);
@@ -703,7 +730,7 @@ render_command_t* editor_start_render(editor_t *editor, const render_options_t* 
 
     int line_number_width = 0;
     if(options->line_numbers) {
-        int biggest_number = vec_length(editor->lines)-1;
+        int biggest_number = vec_length(editor->lines);
         char *line_number = NULL;
         vec_init_size(line_number, 21);
         snprintf(line_number, 21, "%d", biggest_number);
@@ -1029,21 +1056,22 @@ void editor_jump_word(editor_t *editor, int direction) {
     }
 }
 
-void editor_delete_word_at_cursor(editor_t *editor) {
+void editor_delete_word_at_cursor(editor_t *editor, int direction) {
     cursor_t *cursor = &editor->cursors[0];
 
-    bool whitespace_before = sep_cond(-1);
+    bool whitespace_before = sep_cond(direction);
 
-    if(cursor_at_edge(editor, cursor) < 0) return;
+    if(direction == -1 && cursor_at_edge(editor, cursor) < 0) return;
+    if(direction == 0 && cursor_at_edge(editor, cursor) > 0) return;
 
     if(whitespace_before) {
-        while(cursor_at_edge(editor, cursor) >= 0 && sep_cond(-1)) {
-            editor_delete_at_cursor(editor);
+        while(edge_cond && sep_cond(direction)) {
+            editor_delete_at_cursor(editor, direction);
         }
     }
 
-    while(cursor_at_edge(editor, cursor) >= 0 && !sep_cond(-1)) {
-        editor_delete_at_cursor(editor);
+    while(edge_cond && !sep_cond(direction)) {
+        editor_delete_at_cursor(editor, direction);
     }
 }
 
@@ -1055,7 +1083,7 @@ void editor_mouse_to_cursor(editor_t *editor, render_options_t *options, float x
     }
     int line_number_width = 0;
     if(options->line_numbers) {
-        int biggest_number = vec_length(editor->lines)-1;
+        int biggest_number = vec_length(editor->lines);
         char *line_number = NULL;
         vec_init_size(line_number, 21);
         snprintf(line_number, 21, "%d", biggest_number);
