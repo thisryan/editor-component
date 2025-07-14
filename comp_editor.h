@@ -1083,18 +1083,20 @@ render_command_t* editor_start_render(editor_t *editor, const render_options_t* 
             .render_hint = HINT_CURSOR,
         };
         vec_add(render_commands, command);
-        render_command_t highlight = {
-            .type = RECT,
-            .as.rect = {
-                .x = options->area_x,
-                .y = cur_y,
-                .width = options->area_width,
-                .height = options->font_size,
-                .color = {0,0,0, 255}
-            },
-            .render_hint = HINT_HIGHLIGHT_LINE,
-        };
-        vec_add(render_commands, highlight);
+        if(!edutil_cursor_has_selection(cursor)) {
+            render_command_t highlight = {
+                .type = RECT,
+                .as.rect = {
+                    .x = options->area_x,
+                    .y = cur_y,
+                    .width = options->area_width,
+                    .height = options->font_size,
+                    .color = {0,0,0, 255}
+                },
+                .render_hint = HINT_HIGHLIGHT_LINE,
+            };
+            vec_add(render_commands, highlight);
+        }
 
         if(y_start == y_end && x_start != x_end) {
             render_command_t command = edutil_render_command_from_line(x, cur_y, 5, options->font_size, x_start, x_end, line_buffer, options, editor);
