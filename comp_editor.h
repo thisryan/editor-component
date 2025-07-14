@@ -513,7 +513,7 @@ line_buffer_t edutil_split_line_at(editor_t *editor, line_buffer_t *line1, int i
    return newline;
 }
 
-void edutil_remove_selection(editor_t *editor, cursor_t *cursor) {
+void edutil_remove_selection(editor_t *editor, cursor_t *cursor, bool create_action) {
     cursor_t before = *cursor;
     int x_start = cursor->x_start;
     int x_end = cursor->x_end;
@@ -579,7 +579,9 @@ void edutil_remove_selection(editor_t *editor, cursor_t *cursor) {
     cursor_t after = *cursor;
     action.before = before;
     action.after = after;
-    edutil_add_action(editor, action);
+    if(create_action) {
+        edutil_add_action(editor, action);
+    }
 }
 
 void move_cursor_right(editor_t *editor) {
@@ -653,7 +655,7 @@ void editor_cleanup(editor_t *editor) {
 void editor_insert_at_cursor(editor_t *editor, int c) {
     vec_for_each_ptr(cursor_t *cursor, editor->cursors) {
         if(edutil_cursor_has_selection(cursor)) {
-            edutil_remove_selection(editor, cursor);
+            edutil_remove_selection(editor, cursor, true);
         }
         cursor_t before = *cursor;
         line_buffer_t *line = &editor->lines[cursor->y_start];
@@ -733,7 +735,7 @@ void editor_delete_at_cursor(editor_t *editor, int direction) {
     int *delete_lines = NULL;
     vec_for_each_ptr(cursor_t *cursor, editor->cursors) {
         if(edutil_cursor_has_selection(cursor)) {
-            edutil_remove_selection(editor, cursor);
+            edutil_remove_selection(editor, cursor, true);
             continue;
         }
 
@@ -756,7 +758,7 @@ void editor_delete_at_cursor(editor_t *editor, int direction) {
 void editor_newline_at_cursor(editor_t *editor, bool splitline, int direction) {
     cursor_t *cursor = &editor->cursors[0];
     if(splitline && edutil_cursor_has_selection(cursor)) {
-        edutil_remove_selection(editor, cursor);
+        edutil_remove_selection(editor, cursor, true);
     }
     cursor_t before = *cursor;
 
@@ -805,7 +807,7 @@ void editor_newline_at_cursor(editor_t *editor, bool splitline, int direction) {
 
 void edutil_insert_block_at(editor_t *editor, cursor_t *cursor, const char* text, bool ignore_newlines, bool select) {
     if(edutil_cursor_has_selection(cursor)) {
-        edutil_remove_selection(editor, cursor);
+        edutil_remove_selection(editor, cursor, true);
     }
 
     if(ignore_newlines) {
@@ -1378,7 +1380,7 @@ cursor_t rollback_action(editor_t *editor, editor_action_t action) {
 
 void rollback_insert(editor_t *editor, action_insert_t action){
     cursor_t cursor = {.x_start = action.x_start, .y_start = action.y_start, .x_end = action.x_end, .y_end = action.y_end};
-    edutil_remove_selection(editor, &cursor);
+    edutil_remove_selection(editor, &cursor, false);
 }
 
 cursor_t rollback_compound(editor_t *editor, action_compound_t action) {
