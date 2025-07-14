@@ -292,6 +292,11 @@ void editor_rollback(editor_t *editor);
 #endif
 void editor_update_timers(editor_t *editor, double delta);
 
+#ifndef editor_select_all
+#define editor_select_all NAME(select_all)
+#endif
+void editor_select_all(editor_t *editor);
+
 #ifdef EDITOR_IMPLEMENTATION
 
 #ifndef VECTOR_PATH
@@ -1430,6 +1435,18 @@ void editor_rollback(editor_t *editor) {
 
 void editor_update_timers(editor_t *editor, double delta) {
     edutil_advance_timer(&editor->action_timer, delta);
+}
+
+void editor_select_all(editor_t *editor) {
+    cursor_t *cursor = &editor->cursors[0];
+
+    int last_line = vec_length(editor->lines)-1;
+    int last_line_end = vec_length(editor->lines[last_line].text);
+
+    cursor->x_start = last_line_end;
+    cursor->y_start = last_line;
+    cursor->x_end = 0;
+    cursor->y_end = 0;
 }
 
 #undef VECTOR_PATH

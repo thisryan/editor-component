@@ -325,6 +325,10 @@ int main(int argc, char **argv) {
             }
         }
 
+        if(IsKeyPressed(KEY_A) && IsKeyDown(KEY_LEFT_CONTROL)) {
+            select_all(&editor);
+        }
+
         if(IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_RIGHT_BRACKET)) {
             render_options.font_size *= 1.2;
             UnloadFont(roboto);
