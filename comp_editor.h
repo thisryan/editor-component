@@ -962,7 +962,6 @@ render_command_t* editor_start_render(editor_t *editor, const render_options_t* 
         }
     }
 
-    int lines = 0;
     y = options->area_y;
     // printf("------ \n");
     for(int index = editor->scroll_start;index < vec_length(editor->lines);index++) {
@@ -1034,14 +1033,12 @@ render_command_t* editor_start_render(editor_t *editor, const render_options_t* 
 
         vec_add(render_commands, ((render_command_t){.type = TEXT, .render_hint = in_highlight ? coloring.word_colorings[highlight_index].rendering_hint : HINT_TEXT, .as.text = {.x = x, .y = y, .text = printable_line, .font = editor->font, .font_size = options->font_size}}));
 
-        lines++;
         y += options->font_size + options->line_margin;
         if(y > options->area_y+options->area_height) {
             break;
         }
     }
-
-    editor->last_size = lines;
+    editor->last_size = options->area_height / (options->font_size + options->line_margin);
 
     vec_for_each_ptr(cursor_t *cursor, editor->cursors) {
         if(cursor->y_start-editor->scroll_start > y && cursor->y_end-editor->scroll_start > y) continue;
