@@ -4,6 +4,7 @@
 
 #include <string.h>
 
+#define VECTOR_PATH "base/ds/vector.h"
 #define EDITOR_IMPLEMENTATION
 #include <comp_editor.h>
 

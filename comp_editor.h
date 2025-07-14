@@ -300,7 +300,7 @@ void editor_select_all(editor_t *editor);
 #ifdef EDITOR_IMPLEMENTATION
 
 #ifndef VECTOR_PATH
-#define VECTOR_PATH "base/ds/vector.h"
+#error "Please define VECTOR_PATH"
 #endif
 #include VECTOR_PATH
 
