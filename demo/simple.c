@@ -270,6 +270,10 @@ int main(int argc, char **argv) {
         while((c = GetCharPressed()) != 0) {
             insert_at_cursor(&editor, c);
         }
+        
+        if(IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+            stop_select(&editor);
+        }
 
         if(IsKeyPressed(KEY_RIGHT)) {
             if(IsKeyDown(KEY_LEFT_CONTROL)){
@@ -400,13 +404,7 @@ int main(int argc, char **argv) {
             }
         }
 
-        if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            start_select(&editor);
-        }
 
-        if(IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-            stop_select(&editor);
-        }
 
         if(IsKeyPressed(KEY_Y) && IsKeyDown(KEY_LEFT_CONTROL)) {
             rollback(&editor);
@@ -416,9 +414,20 @@ int main(int argc, char **argv) {
             temp_cursor = MOUSE_CURSOR_IBEAM;
         }
 
+        if(IsKeyPressed(KEY_TAB)) {
+            if(IsKeyDown(KEY_LEFT_SHIFT)) {
+                unindent(&editor);
+            } else {
+                indent(&editor);
+            }
+        }
+
         if(temp_cursor != cursor) {
             cursor = temp_cursor;
             SetMouseCursor(cursor);
+        }
+        if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            start_select(&editor);
         }
 
         render_command_t *render_commands = start_render(&editor, &render_options);

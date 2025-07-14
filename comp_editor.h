@@ -297,6 +297,16 @@ void editor_update_timers(editor_t *editor, double delta);
 #endif
 void editor_select_all(editor_t *editor);
 
+#ifndef editor_indent
+#define editor_indent NAME(indent)
+#endif
+void editor_indent(editor_t *editor);
+
+#ifndef editor_unindent
+#define editor_unindent NAME(unindent)
+#endif
+void editor_unindent(editor_t *editor);
+
 #ifdef EDITOR_IMPLEMENTATION
 
 #ifndef VECTOR_PATH
@@ -1449,6 +1459,60 @@ void editor_select_all(editor_t *editor) {
     cursor->y_start = last_line;
     cursor->x_end = 0;
     cursor->y_end = 0;
+}
+
+void editor_indent(editor_t *editor) {
+    cursor_t *cursor = &editor->cursors[0];
+
+    if(edutil_cursor_has_selection(cursor) || editor->selecting) {
+        return;
+    }
+
+    line_buffer_t *current = &editor->lines[cursor->y_start];
+    edutil_insert_in_line(current, cursor->x_start, ' ');
+    edutil_move_cursor_right(editor, cursor, false);
+    while(cursor->x_start % 4 != 0){
+        edutil_insert_in_line(current, cursor->x_start, ' ');
+        edutil_move_cursor_right(editor, cursor, false);
+    }
+
+    edutil_update_coloring(editor, current);
+}
+
+void editor_unindent(editor_t *editor) {
+    cursor_t *cursor = &editor->cursors[0];
+    printf("Check %d:%d\n", edutil_cursor_has_selection(cursor),editor->selecting);
+    if(edutil_cursor_has_selection(cursor)) {
+        return;
+    }
+
+    printf("Hello \n");
+
+    line_buffer_t *line = &editor->lines[cursor->y_start];
+
+    int first_char = -1;
+    for(int i = 0;i < vec_length(line->text);i++){
+        if(line->text[i] != ' ') {
+            first_char = i;
+            break;
+        }
+    }
+
+    printf("%d \n", first_char);
+
+    if(first_char <= 0) return;
+
+    vec_remove(line->text, first_char-1);
+    edutil_move_cursor_left(editor, cursor,false);
+    first_char--;
+    while(first_char % 4 != 0) {
+        printf("Here \n");
+        vec_remove(line->text, first_char-1);
+        edutil_move_cursor_left(editor, cursor,false);
+        first_char--;
+    }
+
+    edutil_update_coloring(editor, line);
 }
 
 #undef VECTOR_PATH
