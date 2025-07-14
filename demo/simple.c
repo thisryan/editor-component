@@ -222,6 +222,11 @@ bool mouse_in_rect(int mx, int my, int rx, int ry, int rw, int rh) {
 int main(int argc, char **argv) {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(0,0, "Editor component");
+
+    Image icon = LoadImage("res/frying-pan.png");
+    SetWindowIcon(icon);
+    UnloadImage(icon);
+
     char *text =  "Das ist ein text\nMit 2 Zeilen";
     if(argc > 1) {
         text = load_file_to_string(argv[1]);
