@@ -1407,8 +1407,6 @@ void rollback_delete(editor_t* editor, action_delete_t delete, cursor_t after) {
 
 void rollback_delete_lines(editor_t* editor, action_delete_line_t delete) {
     for(int j = vec_length(delete.lines)-1;j >= 0;j--){
-        printf("Rollback: %.*s\n", (int)vec_length(delete.lines[j].text), delete.lines[j].text);
-        printf("%d:%zu\n", delete.index, vec_length(editor->lines));
         if(delete.index == vec_length(editor->lines)-1 && j == vec_length(delete.lines)-1) {
             editor->lines[delete.index] = delete.lines[j];
         } else {
