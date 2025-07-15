@@ -210,7 +210,7 @@ void editor_insert_at_cursor(editor_t *editor, int c);
 #ifndef editor_delete_at_cursor
 #define editor_delete_at_cursor NAME(delete_at_cursor)
 #endif
-void editor_delete_at_cursor(editor_t *editor, int direction);
+void editor_delete_at_cursor(editor_t *editor, int direction, bool unindent);
 
 #ifndef editor_delete_word_at_cursor
 #define editor_delete_word_at_cursor NAME(delete_word_at_cursor)
@@ -353,12 +353,12 @@ void edutil_timer_stop(editor_timer_t *timer) {
 }
 
 void edutil_add_action(editor_t *editor, editor_action_t action) {
-    bool inserted = false;;
+    bool inserted = false;
     if(editor->action_timer.running) {
-        editor_action_t last_action = vec_peek(editor->actions);
-        if(last_action.type == action.type) {
+        editor_action_t *last_action = &vec_peek(editor->actions);
+        if(last_action->type == action.type) {
             editor_action_t *actions = NULL;
-            vec_add(actions, last_action);
+            vec_add(actions, *last_action);
             vec_add(actions, action);
             editor_action_t compound = {
                 .type = ACTION_COMPOUND,
@@ -371,8 +371,8 @@ void edutil_add_action(editor_t *editor, editor_action_t action) {
             vec_add(editor->actions, compound);
             inserted = true;
         }
-        if(last_action.type == ACTION_COMPOUND) {
-            action_compound_t *compound = &last_action.as.compound;
+        if(last_action->type == ACTION_COMPOUND) {
+            action_compound_t *compound = &last_action->as.compound;
             if(compound->compound_type == action.type) {
                 vec_add(compound->actions, action);
                 inserted = true;
@@ -407,6 +407,18 @@ char** edutil_split_lines(const char* text) {
     vec_add(lines, cur_line);
 
     return lines;
+}
+
+int edutil_find_first_char(line_buffer_t *line) {
+    int first_char = -1;
+    for(int i = 0;i < vec_length(line->text);i++){
+        if(line->text[i] != ' ') {
+            first_char = i;
+            break;
+        }
+    }
+
+    return first_char;
 }
 
 void edutil_update_coloring(editor_t* editor, line_buffer_t *line) {
@@ -669,6 +681,17 @@ void editor_cleanup(editor_t *editor) {
         vec_free(editor->lines[i].coloring.word_colorings);
     }
     vec_free(editor->lines);
+
+    for(int i = 0;i < vec_length(editor->actions);i++){
+        if(editor->actions[i].type == ACTION_COMPOUND) {
+            vec_free(editor->actions[i].as.compound.actions);
+        }
+
+        if(editor->actions[i].type == ACTION_DELETE){
+            vec_free(editor->actions[i].as.delete.data);
+        }
+    }
+    vec_free(editor->actions);
 }
 
 void editor_insert_at_cursor(editor_t *editor, int c) {
@@ -693,7 +716,7 @@ void editor_insert_at_cursor(editor_t *editor, int c) {
     }
 }
 
-void delete_cursor_left(editor_t *editor, cursor_t *cursor, int** delete_lines) {
+void delete_cursor_left(editor_t *editor, cursor_t *cursor, int** delete_lines, bool unindent) {
     line_buffer_t *line = &editor->lines[cursor->y_start];
     line_buffer_t *prev_line = &editor->lines[cursor->y_start-1];
 
@@ -709,11 +732,33 @@ void delete_cursor_left(editor_t *editor, cursor_t *cursor, int** delete_lines) 
         prev_line->coloring = coloring;
 
     } else {
-        char c = edutil_remove_in_line(line, cursor->x_start-1);
         cursor_t before = *cursor;
+        char *cs = NULL;
+        char c = edutil_remove_in_line(line, cursor->x_start-1);
+        vec_add(cs, c);
         edutil_move_cursor_left(editor,cursor, false);
+        int first_char = edutil_find_first_char(line);
+        if(first_char == -1) first_char = cursor->x_start;
+        bool multiple = false;
+        if(cursor->x_start == first_char && unindent) {
+            multiple = true;
+            while(cursor->x_start % 4 != 0) {
+                char c = edutil_remove_in_line(line, cursor->x_start-1);
+                vec_add(cs, c);
+                edutil_move_cursor_left(editor,cursor, false);
+            }
+        }
         cursor_t after = *cursor;
-        editor_action_t delete = {.type = ACTION_DELETE, .before = before, .after = after, .as.delete = {.type = DELETE_SINGLE, .c = c}};
+        action_delete_t d;
+        if(multiple) {
+            d.type = DELETE_MULTIPLE;
+            d.data = cs;
+        } else {
+            d.type = DELETE_SINGLE;
+            d.c = c;
+            vec_free(cs);
+        }
+        editor_action_t delete = {.type = ACTION_DELETE, .before = before, .after = after, .as.delete = d};
         edutil_add_action(editor, delete);
         line_coloring_t coloring = editor->calculate_color(line->text, vec_length(line->text), line->coloring);
         line->coloring = coloring;
@@ -750,7 +795,7 @@ void delete_cursor_right(editor_t *editor, cursor_t *cursor, int** delete_lines)
     }
 }
 
-void editor_delete_at_cursor(editor_t *editor, int direction) {
+void editor_delete_at_cursor(editor_t *editor, int direction, bool unindent) {
     int *delete_lines = NULL;
     vec_for_each_ptr(cursor_t *cursor, editor->cursors) {
         if(edutil_cursor_has_selection(cursor)) {
@@ -762,11 +807,10 @@ void editor_delete_at_cursor(editor_t *editor, int direction) {
         if(direction == 0 && cursor->y_start == vec_length(editor->lines) && cursor->x_start == vec_length(editor->lines[cursor->y_start].text)) continue;
 
         if(direction == -1) {
-            delete_cursor_left(editor, cursor, &delete_lines);
+            delete_cursor_left(editor, cursor, &delete_lines, unindent);
         } else if(direction == 0) {
             delete_cursor_right(editor, cursor, &delete_lines);
         }
-
     }
 
     for(int j = vec_length(delete_lines)-1;j >= 0;j--){
@@ -1315,12 +1359,12 @@ void editor_delete_word_at_cursor(editor_t *editor, int direction) {
 
     if(whitespace_before) {
         while(edge_cond && sep_cond(direction)) {
-            editor_delete_at_cursor(editor, direction);
+            editor_delete_at_cursor(editor, direction, false);
         }
     }
 
     while(edge_cond && !sep_cond(direction)) {
-        editor_delete_at_cursor(editor, direction);
+        editor_delete_at_cursor(editor, direction, false);
     }
 }
 
@@ -1468,55 +1512,88 @@ void editor_select_all(editor_t *editor) {
 void editor_indent(editor_t *editor) {
     cursor_t *cursor = &editor->cursors[0];
 
-    if(edutil_cursor_has_selection(cursor) || editor->selecting) {
-        return;
-    }
+    if(edutil_cursor_has_selection(cursor)) {
+        int y_start = cursor->y_start < cursor->y_end ? cursor->y_start : cursor->y_end;
+        int y_end = cursor->y_start < cursor->y_end ? cursor->y_end : cursor->y_start;
 
-    line_buffer_t *current = &editor->lines[cursor->y_start];
-    edutil_insert_in_line(current, cursor->x_start, ' ');
-    edutil_move_cursor_right(editor, cursor, false);
-    while(cursor->x_start % 4 != 0){
+        for(int i = y_start;i <= y_end;i++) {
+            line_buffer_t *line = &editor->lines[i];
+
+            for(int j = 0;j < 4;j++){
+                if(i == cursor->y_start) {
+                    cursor->x_start++;
+                }
+                if(i == cursor->y_end) {
+                    cursor->x_end++;
+                }
+                vec_insert(line->text, 0, ' ');
+            }
+
+            edutil_update_coloring(editor, line);
+        }
+
+    } else {
+        line_buffer_t *current = &editor->lines[cursor->y_start];
         edutil_insert_in_line(current, cursor->x_start, ' ');
         edutil_move_cursor_right(editor, cursor, false);
+        while(cursor->x_start % 4 != 0){
+            edutil_insert_in_line(current, cursor->x_start, ' ');
+            edutil_move_cursor_right(editor, cursor, false);
+        }
+
+        edutil_update_coloring(editor, current);
     }
 
-    edutil_update_coloring(editor, current);
 }
 
 void editor_unindent(editor_t *editor) {
     cursor_t *cursor = &editor->cursors[0];
-    printf("Check %d:%d\n", edutil_cursor_has_selection(cursor),editor->selecting);
     if(edutil_cursor_has_selection(cursor)) {
-        return;
-    }
+        int y_start = cursor->y_start < cursor->y_end ? cursor->y_start : cursor->y_end;
+        int y_end = cursor->y_start < cursor->y_end ? cursor->y_end : cursor->y_start;
 
-    printf("Hello \n");
+        for(int i = y_start;i <= y_end;i++) {
+            line_buffer_t *line = &editor->lines[i];
 
-    line_buffer_t *line = &editor->lines[cursor->y_start];
+            int first_char = edutil_find_first_char(line);
 
-    int first_char = -1;
-    for(int i = 0;i < vec_length(line->text);i++){
-        if(line->text[i] != ' ') {
-            first_char = i;
-            break;
+            int stop = min(4, first_char);
+            if(first_char == -1) {
+                stop = min(4, vec_length(line->text));
+            }
+
+            for(int j = 0;j < stop;j++){
+                if(i == cursor->y_start) {
+                    cursor->x_start--;
+                }
+                if(i == cursor->y_end) {
+                    cursor->x_end--;
+                }
+                vec_remove(line->text, 0);
+            }
+
+            edutil_update_coloring(editor, line);
         }
-    }
+    } else {
+        line_buffer_t *line = &editor->lines[cursor->y_start];
+        int first_char = edutil_find_first_char(line);
 
-    printf("%d \n", first_char);
+        if(first_char <= 0){
+            first_char = cursor->x_start;
+        }
 
-    if(first_char <= 0) return;
-
-    vec_remove(line->text, first_char-1);
-    edutil_move_cursor_left(editor, cursor,false);
-    first_char--;
-    while(first_char % 4 != 0) {
-        printf("Here \n");
         vec_remove(line->text, first_char-1);
         edutil_move_cursor_left(editor, cursor,false);
         first_char--;
+        while(first_char % 4 != 0) {
+            vec_remove(line->text, first_char-1);
+            edutil_move_cursor_left(editor, cursor,false);
+            first_char--;
+        }
+
+        edutil_update_coloring(editor, line);
     }
 
-    edutil_update_coloring(editor, line);
 }
 
 #undef VECTOR_PATH

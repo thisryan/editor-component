@@ -270,7 +270,7 @@ int main(int argc, char **argv) {
         while((c = GetCharPressed()) != 0) {
             insert_at_cursor(&editor, c);
         }
-        
+
         if(IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
             stop_select(&editor);
         }
@@ -311,7 +311,7 @@ int main(int argc, char **argv) {
             if(IsKeyDown(KEY_LEFT_CONTROL)) {
                 delete_word_at_cursor(&editor,-1);
             }else {
-                delete_at_cursor(&editor, -1);
+                delete_at_cursor(&editor, -1, true);
             }
         }
 
@@ -319,7 +319,7 @@ int main(int argc, char **argv) {
             if(IsKeyDown(KEY_LEFT_CONTROL)) {
                 delete_word_at_cursor(&editor,0);
             }else {
-                delete_at_cursor(&editor, 0);
+                delete_at_cursor(&editor, 0, false);
             }
         }
 
