@@ -316,6 +316,10 @@ void editor_unindent(editor_t *editor);
 
 #include <string.h>
 
+int min(int a, int b){
+    return a < b ? a : b;
+}
+
 void edutil_advance_timer(editor_timer_t *timer, double delta) {
     if(!timer->running) return;
 
