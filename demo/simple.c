@@ -238,9 +238,8 @@ int main(int argc, char **argv) {
 
     Font roboto = LoadFontEx("res/FiraCode-Regular.ttf", 30, NULL, 0);
 
-    editor_t editor = create(options, markdown_coloring);
+    editor_t editor = create(options, &markdown_coloring, &word_seperator);
     editor.font = &roboto;
-    editor.word_seperator = &word_seperator;
     render_options_t render_options = {
         .area_width = 500,
         .area_height = 500,
@@ -268,42 +267,38 @@ int main(int argc, char **argv) {
 
         int c;
         while((c = GetCharPressed()) != 0) {
-            insert_at_cursor(&editor, c);
-        }
-
-        if(IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-            stop_select(&editor);
+            acursor_insert(&editor, c);
         }
 
         if(IsKeyPressed(KEY_RIGHT)) {
             if(IsKeyDown(KEY_LEFT_CONTROL)){
-                jump_word(&editor, 0);
+                cursor_mword(&editor, 0);
             }else {
-                move_cursor_right(&editor);
+                cursor_mright(&editor);
             }
         }
 
         if(IsKeyPressed(KEY_LEFT)) {
             if(IsKeyDown(KEY_LEFT_CONTROL)) {
-                jump_word(&editor, -1);
+                cursor_mword(&editor, -1);
             }else{
-                move_cursor_left(&editor);
+                cursor_mleft(&editor);
             }
         }
 
         if(IsKeyPressed(KEY_DOWN)) {
             if(IsKeyDown(KEY_LEFT_ALT)) {
-                move_line_at_cursor(&editor, 1);
+                acursor_line_move(&editor, 1);
             } else {
-                move_cursor_down(&editor);
+                cursor_mdown(&editor);
             }
         }
 
         if(IsKeyPressed(KEY_UP)) {
             if(IsKeyDown(KEY_LEFT_ALT)) {
-                move_line_at_cursor(&editor, -1);
+                acursor_line_move(&editor, -1);
             } else {
-                move_cursor_up(&editor);
+                cursor_mup(&editor);
             }
         }
 
@@ -311,7 +306,7 @@ int main(int argc, char **argv) {
             if(IsKeyDown(KEY_LEFT_CONTROL)) {
                 delete_word_at_cursor(&editor,-1);
             }else {
-                delete_at_cursor(&editor, -1, true);
+                acursor_delete(&editor, -1, true);
             }
         }
 
@@ -319,19 +314,19 @@ int main(int argc, char **argv) {
             if(IsKeyDown(KEY_LEFT_CONTROL)) {
                 delete_word_at_cursor(&editor,0);
             }else {
-                delete_at_cursor(&editor, 0, false);
+                acursor_delete(&editor, 0, false);
             }
         }
 
         if(IsKeyPressed(KEY_ENTER)) {
             if(IsKeyDown(KEY_LEFT_CONTROL)) {
                 if(IsKeyDown(KEY_LEFT_SHIFT)) {
-                    newline_at_cursor(&editor, false, 0);
+                    acursor_newline(&editor, false, 0);
                 } else {
-                    newline_at_cursor(&editor, false, 1);
+                    acursor_newline(&editor, false, 1);
                 }
             } else {
-                newline_at_cursor(&editor, true, 1);
+                acursor_newline(&editor, true, 1);
             }
         }
 
@@ -352,17 +347,9 @@ int main(int argc, char **argv) {
             roboto = LoadFontEx("res/FiraCode-Regular.ttf", render_options.font_size, NULL, 0);
         }
 
-        if(IsKeyPressed(KEY_LEFT_SHIFT)) {
-            start_select(&editor);
-        }
-
-        if(IsKeyReleased(KEY_LEFT_SHIFT)) {
-            stop_select(&editor);
-        }
-
         if(IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_V)) {
             const char *text = GetClipboardText();
-            insert_block_at_cursor(&editor, text, false, true);
+            acursor_insert_block(&editor, text, false, true);
         }
 
         if(IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_C)) {
@@ -371,18 +358,18 @@ int main(int argc, char **argv) {
         }
 
         if(IsKeyPressed(KEY_END)) {
-            jump_end_of_line(&editor);
+            cursor_mendline(&editor);
         }
 
         if(IsKeyPressed(KEY_HOME)) {
-            jump_start_of_line(&editor);
+            cursor_mstartline(&editor);
         }
 
         if(IsKeyDown(KEY_LEFT_SHIFT) && IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_D)) {
-            dublicate_line_at_cursor(&editor, 1);
+            acursor_line_dublicate(&editor, 1);
         }
         if(IsKeyDown(KEY_LEFT_SHIFT) && IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_A)) {
-            dublicate_line_at_cursor(&editor, 0);
+            acursor_line_dublicate(&editor, 0);
         }
         if(IsKeyDown(KEY_LEFT_SHIFT) && IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_K)) {
             delete_line_at_cursor(&editor);
@@ -400,11 +387,9 @@ int main(int argc, char **argv) {
             int out_x, out_y;
             mouse_to_cursor(&editor, &render_options, GetMouseX(), GetMouseY(), &out_x, &out_y);
             if(!(out_x == -1 && out_y == -1)) {
-                jump_cursor_to(&editor, out_x, out_y);
+                editor_cursor_mto(&editor, out_x, out_y);
             }
         }
-
-
 
         if(IsKeyPressed(KEY_Y) && IsKeyDown(KEY_LEFT_CONTROL)) {
             rollback(&editor);
@@ -426,9 +411,9 @@ int main(int argc, char **argv) {
             cursor = temp_cursor;
             SetMouseCursor(cursor);
         }
-        if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            start_select(&editor);
-        }
+
+        bool selecting = IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsKeyDown(KEY_LEFT_SHIFT);
+        editor_set_select(&editor, selecting);
 
         render_command_t *render_commands = start_render(&editor, &render_options);
 
