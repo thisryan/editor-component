@@ -11,6 +11,8 @@ edutil_find_first_char
 edutil_update_coloring
 edutil_check_view
 edutil_copy_text
+edutil_line_number_width
+edutil_line_index_from_width
 
 // --Timer
 
@@ -21,8 +23,13 @@ edutil_timer_poll
 
 // --Action
 
+edutil_add_action_compound
+edutil_add_action_impl
 edutil_add_action
 edutil_action_insert
+edutil_add_action_delete_single
+edutil_add_action_delete_multiple
+edutil_add_action_delete_lines
 
 // --Cursor
 
@@ -68,34 +75,36 @@ editor_select_all+
 
 editor_create+
 editor_cleanup+
+editor_update_timerss
 
 // ++Mutation
 
 editor_acursor_insert+
-editor_acursor_delete
-editor_acursor_newline
+editor_acursor_delete+
+editor_acursor_newline+
 editor_acursor_insert_block
-editor_acursor_line_dublicate
+editor_acursor_line_dublicate+
 editor_acursor_line_move+
-editor_delete_line_at_cursor -> editor_acursor_line_delete
-editor_delete_word_at_cursor -> editor_acursor_word_delete
+editor_acursor_line_delete+
+editor_acursor_word_delete+
+editor_start_select+
+editor_stop_select+
+editor_set_select+
+editor_indent -> editor_acursor_indent
+editor_unindent -> editor_acurosr_unindent
 
-// Information
+// ++Information
 
-editor_mouse_to_cursor
-editor_get_selection
+editor_mouse_to_cursor+
+editor_get_selection+
 
-// rendering
+// ++Rendering
 
 edutil_render_command_from_line
 editor_start_render
-editor_start_select
-
-editor_stop_select
 editor_stop_render
 
-
-// rollback
+// ++Rollback
 
 rollback_insert
 rollback_compound
@@ -103,10 +112,6 @@ rollback_delete
 rollback_delete_lines
 rollback_action
 editor_rollback
-
-editor_update_timers
-editor_indent
-editor_unindent
 
 
 types:
