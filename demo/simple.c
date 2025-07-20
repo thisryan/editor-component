@@ -219,9 +219,12 @@ bool mouse_in_rect(int mx, int my, int rx, int ry, int rw, int rh) {
     return mx >= rx && mx <= rx + rw && my >= ry && my <= ry + rh;
 }
 
+
 int main(int argc, char **argv) {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    SetTraceLogLevel(LOG_ERROR);
     InitWindow(0,0, "Editor component");
+
 
     Image icon = LoadImage("res/frying-pan.png");
     SetWindowIcon(icon);
@@ -304,7 +307,7 @@ int main(int argc, char **argv) {
 
         if(IsKeyPressed(KEY_BACKSPACE)) {
             if(IsKeyDown(KEY_LEFT_CONTROL)) {
-                delete_word_at_cursor(&editor,-1);
+                acursor_word_delete(&editor,-1);
             }else {
                 acursor_delete(&editor, -1, true);
             }
@@ -312,7 +315,7 @@ int main(int argc, char **argv) {
 
         if(IsKeyPressed(KEY_DELETE)) {
             if(IsKeyDown(KEY_LEFT_CONTROL)) {
-                delete_word_at_cursor(&editor,0);
+                acursor_word_delete(&editor,0);
             }else {
                 acursor_delete(&editor, 0, false);
             }
@@ -372,7 +375,7 @@ int main(int argc, char **argv) {
             acursor_line_dublicate(&editor, 0);
         }
         if(IsKeyDown(KEY_LEFT_SHIFT) && IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_K)) {
-            delete_line_at_cursor(&editor);
+            acursor_line_delete(&editor);
         }
 
         if(GetMouseWheelMove() == 1) {
@@ -401,9 +404,9 @@ int main(int argc, char **argv) {
 
         if(IsKeyPressed(KEY_TAB)) {
             if(IsKeyDown(KEY_LEFT_SHIFT)) {
-                unindent(&editor);
+                acursor_unindent(&editor);
             } else {
-                indent(&editor);
+                acursor_indent(&editor);
             }
         }
 
@@ -417,7 +420,8 @@ int main(int argc, char **argv) {
 
         render_command_t *render_commands = start_render(&editor, &render_options);
 
-        vec_for_each_ptr(const render_command_t *command, render_commands) {
+        for(int i = 0;i < vec_length(render_commands);i++){
+            const render_command_t *command = &render_commands[i];
             if(command->type == TEXT) {
                 const render_text_t *text_command = &command->as.text;
                 Font font = *(Font*)text_command->font;
